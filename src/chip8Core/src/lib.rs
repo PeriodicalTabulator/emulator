@@ -35,5 +35,22 @@ impl Emu{
             st: 0, 
         } 
     }
+
+
+    fn push(&mut self, val:u16){
+        self.stack[self.sp as usize] = val;
+        self.sp += 1;
+    }
+
+    fn pop(&mut self) -> u16{
+        self.sp -= 1;
+        self.stack[self.sp as usize]
+        //note that we dont handle empty stack but think of it as if ROM with game would have empty stack
+        // it would be bug inside of game and not in emulator so its acceptable to get panic
+
+        //feel free to implement
+    }
+
+
 }
 
