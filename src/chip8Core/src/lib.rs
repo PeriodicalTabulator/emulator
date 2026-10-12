@@ -132,8 +132,71 @@ impl Emu{
         let digit4 = op & 0x00F;
     
         match (digit1, digit2, digit3, digit4){
-            (_,_,_,_) => unimplemented!("Not in opcode: {}", op);
-            
+            //NOP
+            (0,0,0,0) => return;
+            //Clear screen
+            (0,0,0xE,0) => {
+                self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
+            },
+            //Retrn from subroute
+            (0,0,0xE,0xE) => {
+                let ret_addr = self.pop();
+                self.pc = ret_addr;
+            },
+            //1NNN jump
+            (1,_,_,_) => {
+                let nnn = op & 0xFFF;
+                self.pc = nnn;
+            },
+            //2NNN jump 
+            (2,_,_,_) =>{
+                let nnn = 0xFFF;
+                self.push(self.pc);
+                self.pc = nnn;
+            },
+            //3NNN skip if VX == NN
+            (3,_,_,_) =>{
+                let x = digit2 as usize;
+                let nn = (op & 0xFF) as u8;
+                if self.v_reg[x] == nn {
+                    self.pc +=2;
+                }
+            },
+            //4XNN skip if VX != NN
+            (4,_,_,_) =>{
+                let x = digit2 as usize;
+                let nn = (op & 0xFF) as u8;
+                if self.v_reg[x] != nn {
+                    self.pc +=2;
+                }
+            },
+            //5XY0 skip next if VX == VY
+            (5,_,_,0) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                if self.v_reg[x] == self.v_reg[y]{
+                    self.pc += 2;
+                }
+            },
+            //6XNN VX = NN
+            (6,_,_,_) =>{
+                let x = digit2 as usize;
+                let nn = (op & 0xFF) as u8;
+                self.v_reg[x] = nn;
+            },
+            //7XNN VX += NN
+            (7,_,_,_) =>{
+                let x = digit2 as usize;
+                let nn = (op & 0xFF) as u8;
+                self.v_reg[x] = self.v_reg[x].wrapping_add(nn);
+            },
+            //8XY0 VX = VY 
+            (8,_,_,0) =>{
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                self.v_reg[x] = self.v_reg[y];
+            },
+            (_,_,_,_) => unimplemented!("Not in opcode: {}", op),
         }
     }
 
