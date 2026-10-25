@@ -1,7 +1,9 @@
-pub const WINDOWS_WIDTH:usize = 64;
-pub const WINDOWS_HEIGHT:usize = 32
+use rand::random;
 
-const START_ADDR:u16 = 0x200
+pub const WINDOWS_WIDTH:usize = 64;
+pub const WINDOWS_HEIGHT:usize = 32;
+
+const START_ADDR:u16 = 0x200;
 
 const RAM_SIZE:usize = 4096;
 const NUM_REG: usize = 16;
@@ -19,7 +21,7 @@ so it will looks like this:
 01110000 */
 
 const FONTSET_SIZE:usize = 80;
-const FONTSET:[u8,FONTSET_SIZE]= [
+const FONTSET:[u8; FONTSET_SIZE]= [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
     0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -47,26 +49,26 @@ pub struct Emu{
     v_reg: [u8; NUM_REG],    //V0 to VF
     i_reg: u16,
     sp: u16,
-    stack: [u16, STACK_SIZE],
-    keys: [u16, KEY_SIZE],
+    stack: [u16; STACK_SIZE],
+    keys: [u16; KEY_SIZE],
     dt: u8, //delay timer
     st: u8, //sound timer
 }
 
 impl Emu{
     pub fn new() -> Self {
-        Self{
+       let mut new_emu = Self{
             pc: START_ADDR,
             ram: [0; RAM_SIZE],
             screen: [false; WINDOWS_WIDTH * WINDOWS_HEIGHT],
             v_reg: [0; NUM_REG],
             i_reg: 0,
             sp: 0,
-            stack: [0, STACK_SIZE],
-            keys: [0, KEY_SIZE],
+            stack: [0; STACK_SIZE],
+            keys: [0; KEY_SIZE],
             dt: 0,
             st: 0, 
-        } 
+        };
 
         new_emu.ram[..FONTSET_SIZE].copy_from_slice(&FONTSET);
         new_emu
@@ -87,15 +89,15 @@ impl Emu{
         //feel free to implement
     }
 
-    ub fn reset(&mut self) {
+    pub fn reset(&mut self) {
     self.pc = START_ADDR;
     self.ram = [0; RAM_SIZE];
-    self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
-    self.v_reg = [0; NUM_REGS];
+    self.screen = [false; WINDOWS_WIDTH * WINDOWS_HEIGHT];
+    self.v_reg = [0; NUM_REG];
     self.i_reg = 0;
     self.sp = 0;
     self.stack = [0; STACK_SIZE];
-    self.keys = [false; NUM_KEYS];
+    self.keys = [0; KEY_SIZE];
     self.dt = 0;
     self.st = 0;
     self.ram[..FONTSET_SIZE].copy_from_slice(&FONTSET);
@@ -133,10 +135,10 @@ impl Emu{
     
         match (digit1, digit2, digit3, digit4){
             //NOP
-            (0,0,0,0) => return;
+            (0,0,0,0) => return,
             //Clear screen
             (0,0,0xE,0) => {
-                self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
+                self.screen = [false; WINDOWS_WIDTH * WINDOWS_HEIGHT];
             },
             //Retrn from subroute
             (0,0,0xE,0xE) => {
@@ -196,6 +198,84 @@ impl Emu{
                 let y = digit3 as usize;
                 self.v_reg[x] = self.v_reg[y];
             },
+            (8,_,_,1) =>{
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                self.v_reg[x] |= self.v_reg[y];
+            },
+            (8,_,_,2) =>{
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                self.v_reg[x] &= self.v_reg[y];
+            },
+            (8,_,_,3)=> {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                self.v_reg[x] ^= self.v_reg[y];
+            },
+            (8,_,_,4) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+
+                let(new_vx, carry) = self.v_reg[x].overflowing_add(self.v_reg[y]);
+                let new_vf = if carry {1} else {0};
+
+                self.v_reg[x] = new_vx;
+                self.v_reg[0xF] = new_vf;
+            },
+            (8,_,_,5) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+
+                let (new_vx, borrow) = self.v_reg[x].overflowing_add(self.v_reg[y]);
+                let new_vf = if borrow {0} else {1};
+
+                self.v_reg[x] =new_vx;
+                self.v_reg[0xF] = new_vf
+            },
+            (8,_,_,6) => {
+                let x = digit2 as usize;
+                let lsb = self.v_reg[x] & 1;
+                self.v_reg[x] >>= 1;
+                self.v_reg[0xF] = lsb;
+            },
+            (8,_,_,7) => {
+                let x = digit2 as usize; 
+                let y = digit3 as usize;
+
+                let (new_vx, borrow) = self.v_reg[y].overflowing_sub(self.v_reg[x]);
+                let new_vf = if borrow {0} else {1};
+
+                self.v_reg[x] = new_vx;
+                self.v_reg[0xF] = new_vf;
+            },
+            (8,_,_,0xE) => {
+                let x = digit2 as usize;
+                let msb = (self.v_reg[x] >> 7) & 1 ;
+                self.v_reg[x] <<= 1;
+                self.v_reg[0xF] = msb;
+            },
+            (9,_,_,0) => {
+                let x = digit2 as usize;
+                let y = digit3 as usize;
+                if self.v_reg[x] != self.v_reg[y] {
+                    self.pc +=2;
+                }
+            },
+            (0xA,_,_,_) => {
+                let nnn = op & 0xFFF;
+                self.i_reg = nnn;
+            },
+            (0xB,_,_,_) =>{
+                let nnn = op & 0xFFF;
+                self.pc = (self.v_reg[0] as u16) + nnn;
+            },
+            (0xC,_,_,_) => {
+                let x = digit2 as usize;
+                let nn = (op & 0xFF) as u8;
+                let rng: u8 = random();
+                self.v_reg[x] = rng & nn;
+            }
             (_,_,_,_) => unimplemented!("Not in opcode: {}", op),
         }
     }
