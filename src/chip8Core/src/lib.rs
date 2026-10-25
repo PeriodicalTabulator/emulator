@@ -50,7 +50,7 @@ pub struct Emu{
     i_reg: u16,
     sp: u16,
     stack: [u16; STACK_SIZE],
-    keys: [u16; KEY_SIZE],
+    keys: [bool; KEY_SIZE],
     dt: u8, //delay timer
     st: u8, //sound timer
 }
@@ -65,7 +65,7 @@ impl Emu{
             i_reg: 0,
             sp: 0,
             stack: [0; STACK_SIZE],
-            keys: [0; KEY_SIZE],
+            keys: [false; KEY_SIZE],
             dt: 0,
             st: 0, 
         };
@@ -97,7 +97,7 @@ impl Emu{
     self.i_reg = 0;
     self.sp = 0;
     self.stack = [0; STACK_SIZE];
-    self.keys = [0; KEY_SIZE];
+    self.keys = [false; KEY_SIZE];
     self.dt = 0;
     self.st = 0;
     self.ram[..FONTSET_SIZE].copy_from_slice(&FONTSET);
@@ -275,7 +275,106 @@ impl Emu{
                 let nn = (op & 0xFF) as u8;
                 let rng: u8 = random();
                 self.v_reg[x] = rng & nn;
-            }
+            },
+            //drawing sprites
+            (0xD,_,_,_) => {
+                //second and third digit is coords of sprite
+                let x_coord = self.v_reg[digit2 as usize] as u16;
+                let y_coord = self.v_reg[digit3 as usize] as u16;
+                //fourth determans rows height
+                let num_rows = digit4;
+
+                let mut flipped = false;
+
+                for y_line in 0..num_rows{
+                    let addr = self.i_reg + y_line as u16;
+                    let pixels = self.ram[addr as usize];
+
+                    for x_line in 0..8 {
+                        if(pixels & (0b1000_0000 >> x_line)) != 0 {
+                            let x = (x_coord + x_line) as usize % WINDOWS_WIDTH;
+                            let y = (y_coord + y_line) as usize % WINDOWS_HEIGHT;
+
+                            let idx = x + WINDOWS_WIDTH * y;
+                            flipped |= self.screen[idx];
+                            self.screen[idx] ^= true;
+                        }
+                    }
+                }
+                if flipped {
+                    self.v_reg[0xF] = 1;
+                }else {
+                    self.v_reg[0xF] = 0;
+                }
+            },
+            (0xE,_,9,0xE) => {
+                let x = digit2 as usize;
+                let vx = self.v_reg[x];
+                let key = self.keys[vx as usize];
+                if key {
+                    self.pc += 2;
+                }
+            },
+            (0xF,_,0,7) => {
+                let x = digit2 as usize;
+                self.v_reg[x] = self.dt;
+            },
+            (0xF,_,0,0xA) =>{
+                let x =  digit2 as usize;
+                let mut pressed = false;
+                for i in 0..self.keys.len(){
+                    if self.keys[i]{
+                        self.v_reg[x] = i as u8;
+                        pressed = true;
+                        break;
+                    }
+                }
+                if !pressed {
+                    self.pc -= 2;
+                }
+            },
+            (0xF,_,1,8) => {
+                let x = digit2 as usize;
+                self.st = self.v_reg[x];
+            },
+            (0xF,_,1,0xE) =>{
+                let x = digit2 as usize;
+                let vx = self.v_reg[x] as u16;
+                self.i_reg = self.i_reg.wrapping_add(vx);
+            },
+            (0xF,_,2,9) =>{
+                let x = digit2 as usize;
+                let c = self.v_reg[x] as u16;
+                self.i_reg = c * 5;
+            },
+            //BCD
+            (0xF,_,3,3) =>{
+                let x = digit2 as usize;
+                let vx = self.v_reg[x] as f32;
+
+                let hundreds = (vx / 100.0).floor() as u8;
+                let tens = ((vx / 10.0) %10.0).floor() as u8;
+                let ones = (vx % 10.0) as u8;
+
+                self.ram[self.i_reg as usize] = hundreds;
+                self.ram[(self.i_reg +1) as usize] = tens;
+                self.ram[(self.i_reg +2) as usize] = ones;
+            },
+            (0xF,_,5,5) =>{
+                let x = digit2 as usize;
+                let i = self.i_reg as usize;
+                for idx in 0..= x {
+                    self.ram[i + idx] = self.v_reg[idx];
+                }
+            },
+            (0xF,_,6,5) => {
+                let x = digit2 as usize;
+                let i = self.i_reg as usize;
+                for idx in 0..= x {
+                    self.v_reg[idx] = self.ram[i + idx];
+                }
+            },
+
             (_,_,_,_) => unimplemented!("Not in opcode: {}", op),
         }
     }
